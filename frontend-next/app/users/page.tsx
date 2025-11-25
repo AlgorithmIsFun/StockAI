@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { fetchFromAPI } from "../../lib/api";
-
+//Create Users with python manage.py createsuperuser
 export default function Users() {
   const [users, setUsers] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -14,7 +14,7 @@ export default function Users() {
             .then((res) => setUsers(res))
             .catch((err) => setError(err.message));
       }, []);
-  if (!mounted) return null; // don’t render anything until clien
+  if (!mounted) return null; // don’t render anything until client
   return (
     <div className="container">
       <h1>Users</h1>
