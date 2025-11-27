@@ -39,8 +39,10 @@ class StockReportView(APIView):
 
         print(f"The current price for {ticker} is: ${current_price}")
         if report:
+            subset_keys = {'currentPrice', 'marketCap', 'averageVolume', 'priceEpsCurrentYear', 'fiftyTwoWeekHigh', 'averageAnalystRating', 'dividendYield', 'fullExchangeName'}
+            stock_report = dict((key, value) for key, value in report.items() if key in subset_keys)
             # Return the report data with a 200 OK status
-            return Response(report, status=status.HTTP_200_OK)
+            return Response(stock_report, status=status.HTTP_200_OK)
         else:
             # Return a 404 Not Found status if the ticker is invalid
             return Response(
