@@ -8,6 +8,7 @@ from django.urls import path
 import yfinance as yf
 import requests
 from bs4 import BeautifulSoup
+import pandas as pd
 import re
 
 class StockReportView(APIView):
@@ -120,6 +121,32 @@ class StockReportView(APIView):
                     result["website"] = value.get_text(" ", strip=True)
         return result
 
+    def get_history(self, ticker):
+        try:
+            stock_history = yf.download(
+                tickers=ticker,
+                period="3mo",
+                interval="1d",
+                auto_adjust=True
+            )
+            if stock_history.empty:
+                return None
+            if isinstance(stock_history.columns, pd.MultiIndex):
+                stock_history.columns = stock_history.columns.droplevel(1)
+            data_list = stock_history.reset_index().to_dict(orient='records')
+            formatted_data = []
+            for record in data_list:
+                formatted_data.append({
+                    'Date': record['Date'].strftime('%Y-%m-%d'),  # Format date string
+                    'Open': round(record['Open'], 2),
+                    'High': round(record['High'], 2),
+                    'Low': round(record['Low'], 2),
+                    'Close': round(record['Close'], 2),
+                    'Volume': record['Volume'],
+                })
+            return {"stock_history": formatted_data}
+        except:
+            return None
     def get(self, request, ticker):
         # Normalize the ticker to match the keys in the data source
         ticker = ticker.upper()
@@ -148,6 +175,8 @@ class StockReportView(APIView):
             stock_report.update(info)
             stock_report.update(key_people)
             # Return the report data with a 200 OK status
+            stock_history = self.get_history(ticker)
+            stock_report.update(stock_history)
             return Response(stock_report, status=status.HTTP_200_OK)
         else:
             # Return a 404 Not Found status if the ticker is invalid
