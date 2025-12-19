@@ -6,4 +6,5 @@ urlpatterns = [
     path("users/", views.users_list),
     path("reports/", views.reports_list),
     path('stock/<str:ticker>/', views.StockReportView.as_view(), name='stock-report'),
+    path('stock/<str:ticker>/history/', views.StockReportView.as_view(), name='stock-history'),
 ]

@@ -10,6 +10,7 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import re
+from datetime import datetime, timezone
 
 class StockReportView(APIView):
     """
@@ -121,33 +122,94 @@ class StockReportView(APIView):
                     result["website"] = value.get_text(" ", strip=True)
         return result
 
-    def get_history(self, ticker):
+    def get_history(self, ticker, period, interval):
         try:
             stock_history = yf.download(
                 tickers=ticker,
-                period="3mo",
-                interval="1d",
+                period=period,
+                interval=interval,
                 auto_adjust=True
             )
             if stock_history.empty:
-                return None
+                return {"stock_history": []}
             if isinstance(stock_history.columns, pd.MultiIndex):
                 stock_history.columns = stock_history.columns.droplevel(1)
             data_list = stock_history.reset_index().to_dict(orient='records')
             formatted_data = []
             for record in data_list:
+                date_key = 'Datetime' if 'Datetime' in record else 'Date'
+
+                # Format logic for X-axis readability
+                if interval in ['15m', '1h']:
+                    date_str = record[date_key].strftime('%H:%M')
+                else:
+                    date_str = record[date_key].strftime('%Y-%m-%d')
                 formatted_data.append({
-                    'Date': record['Date'].strftime('%Y-%m-%d'),  # Format date string
-                    'Open': round(record['Open'], 2),
-                    'High': round(record['High'], 2),
-                    'Low': round(record['Low'], 2),
+                    'Date': date_str,
                     'Close': round(record['Close'], 2),
-                    'Volume': record['Volume'],
+                    'Volume': round(record['Volume'], 2),
                 })
             return {"stock_history": formatted_data}
         except:
-            return None
+            return {"stock_history": []}
+    def get_time_diff(self, time1):
+        current_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        t1 = datetime.strptime(time1, "%Y-%m-%dT%H:%M:%SZ")
+        t2 = datetime.strptime(current_time, "%Y-%m-%dT%H:%M:%SZ")
+        # Calculate total seconds
+        diff = t2 - t1
+        total_seconds = diff.total_seconds()
+        minutes = total_seconds / 60
+        hours = total_seconds / 3600
+        days = total_seconds / (24 * 3600)
+        weeks = days / 7
+        months = days / 30.44  # Using an average month length
+        years = days / 365.25  # Using an average year length
+
+        print(f"Hours:  {hours:.4f}")
+        print(f"Days:   {days:.4f}")
+        print(f"Weeks:  {weeks:.4f}")
+        print(f"Months: {months:.6f}")
+        print(f"Years:  {years:.8f}")
+        if years >= 1:
+            return f"{int(years)} years ago"
+        elif months >= 1:
+            return f"{int(months)} months ago"
+        elif weeks >= 1:
+            return f"{int(weeks)} weeks ago"
+        elif days >= 1:
+            return f"{int(days)} days ago"
+        elif hours >= 1:
+            return f"{int(hours)} hours ago"
+        elif minutes >= 1:
+            return f"{int(minutes)} minutes ago"
+        else:
+            return f"0 minutes ago"
+    def get_news_articles(self, stock):
+        news = stock.news[:5]
+        articles = []
+        keys_to_keep = ['title', 'pubDate', 'thumbnail', 'canonicalUrl']
+        for j in range(len(news)):
+            subset = news[j]['content']
+            subset_dict = {key: subset[key] for key in keys_to_keep if key in subset}
+            subset_dict['thumbnail'] = subset_dict['thumbnail']['originalUrl']
+            subset_dict['canonicalUrl'] = subset_dict['canonicalUrl']['url']
+            subset_dict['pubDate'] = self.get_time_diff(subset_dict['pubDate'])
+            articles.append(subset_dict)
+        return {"news": articles}
+
     def get(self, request, ticker):
+        time_range = request.query_params.get('range', '3m')
+        range_map = {
+            '1d': '1d',
+            '5d': '5d',
+            '3m': '3mo',
+            '1y': '1y',
+            '5y': '5y',
+            'max': 'max'
+        }
+        target_period = range_map.get(time_range, '3mo')
+        target_interval = '15m' if time_range == '1d' else '1h' if time_range == '5d' else '1d'
         # Normalize the ticker to match the keys in the data source
         ticker = ticker.upper()
         stock = yf.Ticker(ticker)
@@ -175,8 +237,10 @@ class StockReportView(APIView):
             stock_report.update(info)
             stock_report.update(key_people)
             # Return the report data with a 200 OK status
-            stock_history = self.get_history(ticker)
+            stock_history = self.get_history(ticker, target_period, target_interval)
             stock_report.update(stock_history)
+            top5_news = self.get_news_articles(stock)
+            stock_report.update(top5_news)
             return Response(stock_report, status=status.HTTP_200_OK)
         else:
             # Return a 404 Not Found status if the ticker is invalid
@@ -184,6 +248,19 @@ class StockReportView(APIView):
                 {"detail": f"Stock ticker '{ticker}' not found."},
                 status=status.HTTP_404_NOT_FOUND
             )
+
+
+class StockHistoryView(APIView):
+    def get(self, request, ticker):
+        time_range = request.query_params.get('range', '3m')
+        range_map = {'1d': '1d', '5d': '5d', '3m': '3mo', '1y': '1y', '5y': '5y', 'max': 'max'}
+        target_period = range_map.get(time_range, '3mo')
+        target_interval = '15m' if time_range == '1d' else '1h' if time_range == '5d' else '1d'
+
+        # Use your existing get_history logic here
+        view_instance = StockReportView()
+        history = view_instance.get_history(ticker.upper(), target_period, target_interval)
+        return Response(history)
 
 def reports_list(request):
     # Example static data for now
